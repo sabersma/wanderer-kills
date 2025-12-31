@@ -483,6 +483,7 @@ defmodule WandererKills.Ingest.RedisQ do
     elapsed_ms = System.monotonic_time(:millisecond) - start_time
 
     Logger.debug("[RedisQ] HTTP request completed in #{elapsed_ms}ms")
+    Logger.debug("[RedisQ] Full response result: #{inspect(result, limit: :infinity)}") # 使用 limit: :infinity 确保完整打印
 
     case result do
       # No package → no new kills
