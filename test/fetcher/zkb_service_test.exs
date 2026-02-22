@@ -260,7 +260,7 @@ defmodule WandererKills.Ingest.Killmails.ZkbClientTest do
       date = "20240101"
 
       rate_limit_error = %WandererKills.Core.Support.Error{
-        type: :rate_limit,
+        type: :rate_limited,
         message: "Rate limit exceeded"
       }
 

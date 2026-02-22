@@ -48,7 +48,7 @@ The codebase underwent major simplification across 6 sprints, achieving:
 ## Architecture Overview
 
 WandererKills provides:
-- Real-time killmail data from zKillboard via RedisQ
+- Real-time killmail data from zKillboard via R2Z2
 - Historical data fetching and caching
 - ESI (EVE Swagger Interface) data enrichment
 - Multiple integration patterns for different use cases

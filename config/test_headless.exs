@@ -12,7 +12,7 @@ config :wanderer_kills,
   # Service configuration
   services: [
     start_preloader: false,
-    start_redisq: false
+    start_r2z2: false
   ],
 
   # Cache configuration - stable TTL for tests

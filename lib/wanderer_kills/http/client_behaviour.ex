@@ -15,4 +15,5 @@ defmodule WandererKills.Http.ClientBehaviour do
   @callback post(url, body :: term(), headers, options) :: response
   @callback get_esi(url, headers, options) :: response
   @callback get_zkb(url, headers, options) :: response
+  @callback get_r2z2(url, headers, options) :: response
 end

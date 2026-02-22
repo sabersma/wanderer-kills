@@ -76,7 +76,7 @@ defmodule WandererKillsWeb.PageHTML do
          status: status,
          websocket_stats: websocket_stats,
          ets_stats: ets_stats,
-         redisq_stats: redisq_stats,
+         ingest_stats: ingest_stats,
          historical_stats: historical_stats
        }) do
     historical_card =
@@ -93,7 +93,7 @@ defmodule WandererKillsWeb.PageHTML do
     #{system_performance_card(status)}
     #{message_delivery_card(websocket_stats, status)}
     #{ets_storage_card(ets_stats)}
-    #{redisq_pipeline_card(redisq_stats)}
+    #{ingest_pipeline_card(ingest_stats)}
     #{historical_card}
     </div>
     """
@@ -282,31 +282,31 @@ defmodule WandererKillsWeb.PageHTML do
     """
   end
 
-  defp redisq_pipeline_card(redisq_stats) do
+  defp ingest_pipeline_card(ingest_stats) do
     """
     <div class="health-card">
       <div class="health-header">
-        <h3 class="health-title">RedisQ Pipeline</h3>
-        <span class="health-status #{if redisq_stats.status == "active", do: "success", else: "warning"}">
-          🔄 #{String.capitalize(redisq_stats.status)}
+        <h3 class="health-title">R2Z2 Pipeline</h3>
+        <span class="health-status #{if ingest_stats.status == "active", do: "success", else: "warning"}">
+          🔄 #{String.capitalize(ingest_stats.status)}
         </span>
       </div>
       <div class="metrics">
         <div class="metric-row">
           <span class="metric-label">Total Processed</span>
-          <span class="metric-value">#{format_number(redisq_stats.total_processed)}</span>
+          <span class="metric-value">#{format_number(ingest_stats.total_processed)}</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Processing Rate</span>
-          <span class="metric-value">#{format_number(redisq_stats.processing_rate)}/min</span>
+          <span class="metric-value">#{format_number(ingest_stats.processing_rate)}/min</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Queue Lag</span>
-          <span class="metric-value">#{format_latency(redisq_stats.queue_lag)}</span>
+          <span class="metric-value">#{format_latency(ingest_stats.queue_lag)}</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Last Processed</span>
-          <span class="metric-value">#{redisq_stats.last_processed}</span>
+          <span class="metric-value">#{ingest_stats.last_processed}</span>
         </div>
       </div>
     </div>

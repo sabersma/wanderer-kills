@@ -4,7 +4,7 @@ defmodule WandererKills.Dashboard do
 
   Handles fetching and formatting all data needed for the dashboard display,
   including health checks, system status, websocket statistics, ETS storage info,
-  and RedisQ processing metrics.
+  and R2Z2 ingest processing metrics.
   """
 
   require Logger
@@ -25,9 +25,9 @@ defmodule WandererKills.Dashboard do
                 {:counters, "🔢", "Counters"}
               ])
 
-  # RedisQ reports stats every 60 seconds. We consider data stale if it's older than
+  # R2Z2 reports stats every 60 seconds. We consider data stale if it's older than
   # 70 seconds to allow for some processing delay and clock drift
-  @redisq_window_staleness_seconds 70
+  @ingest_window_staleness_seconds 70
 
   @doc """
   Gathers all dashboard data needed for display.
@@ -39,7 +39,7 @@ defmodule WandererKills.Dashboard do
   - `:uptime` - Formatted uptime string
   - `:version` - Application version
   - `:ets_stats` - ETS table statistics
-  - `:redisq_stats` - RedisQ processing statistics
+  - `:ingest_stats` - R2Z2 ingest processing statistics
 
   ## Returns
 
@@ -98,7 +98,7 @@ defmodule WandererKills.Dashboard do
       end
 
     ets_stats = get_ets_stats()
-    redisq_stats = get_redisq_stats(status)
+    ingest_stats = get_ingest_stats(status)
     historical_stats = get_historical_streaming_stats()
 
     data = %{
@@ -108,7 +108,7 @@ defmodule WandererKills.Dashboard do
       uptime: uptime,
       version: version,
       ets_stats: ets_stats,
-      redisq_stats: redisq_stats,
+      ingest_stats: ingest_stats,
       historical_stats: historical_stats
     }
 
@@ -191,11 +191,11 @@ defmodule WandererKills.Dashboard do
     end)
   end
 
-  defp get_redisq_stats(status) do
-    total_processed = Utils.safe_get(status, [:processing, :redisq_received], 0)
+  defp get_ingest_stats(status) do
+    total_processed = Utils.safe_get(status, [:processing, :killmails_received], 0)
 
     last_killmail_ago =
-      Utils.safe_get(status, [:processing, :redisq_last_killmail_ago_seconds], nil)
+      Utils.safe_get(status, [:processing, :last_killmail_ago_seconds], nil)
 
     processing_lag = Utils.safe_get(status, [:processing, :processing_lag_seconds], 0)
 
@@ -212,10 +212,10 @@ defmodule WandererKills.Dashboard do
   end
 
   defp calculate_current_processing_rate(status) do
-    # Get the raw RedisQ stats from ETS for more accurate rate calculation
+    # Get the raw R2Z2 stats from ETS for more accurate rate calculation
     case :ets.info(EtsOwner.wanderer_kills_stats_table()) do
       :undefined ->
-        total = Utils.safe_get(status, [:processing, :redisq_received], 0)
+        total = Utils.safe_get(status, [:processing, :killmails_received], 0)
         calculate_simple_rate_from_total(total)
 
       _ ->
@@ -224,28 +224,28 @@ defmodule WandererKills.Dashboard do
   end
 
   defp calculate_rate_from_ets_stats(status) do
-    case :ets.lookup(EtsOwner.wanderer_kills_stats_table(), :redisq_stats) do
-      [{:redisq_stats, stats}] when is_map(stats) ->
+    case :ets.lookup(EtsOwner.wanderer_kills_stats_table(), :r2z2_stats) do
+      [{:r2z2_stats, stats}] when is_map(stats) ->
         calculate_rate_from_window_stats(stats)
 
       _ ->
-        total = Utils.safe_get(status, [:processing, :redisq_received], 0)
+        total = Utils.safe_get(status, [:processing, :killmails_received], 0)
         calculate_simple_rate_from_total(total)
     end
   end
 
   defp calculate_rate_from_window_stats(stats) do
-    # RedisQ tracks kills_received in 60-second windows
+    # R2Z2 tracks killmails_received in 60-second windows
     # Use the window stats for a more accurate current rate
-    window_kills = Map.get(stats, :kills_received, 0)
+    window_kills = Map.get(stats, :killmails_received, 0)
     last_reset = Map.get(stats, :last_reset, DateTime.utc_now())
 
     seconds_elapsed = DateTime.diff(DateTime.utc_now(), last_reset, :second)
 
-    if seconds_elapsed > 0 and seconds_elapsed <= @redisq_window_staleness_seconds do
+    if seconds_elapsed > 0 and seconds_elapsed <= @ingest_window_staleness_seconds do
       round(window_kills * 60 / seconds_elapsed)
     else
-      total = Map.get(stats, :total_kills_received, 0)
+      total = Map.get(stats, :total_killmails_received, 0)
       calculate_simple_rate_from_total(total)
     end
   end

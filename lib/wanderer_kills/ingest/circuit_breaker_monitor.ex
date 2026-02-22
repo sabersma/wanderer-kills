@@ -1,13 +1,13 @@
 defmodule WandererKills.Ingest.CircuitBreakerMonitor do
   @moduledoc """
-  Monitors the RedisQ circuit breaker and triggers alerts or recovery actions
+  Monitors the R2Z2 circuit breaker and triggers alerts or recovery actions
   when the circuit remains open for too long.
   """
 
   use GenServer
   require Logger
 
-  alias WandererKills.Ingest.RedisQ
+  alias WandererKills.Config
 
   # Configuration constants
   @check_interval_ms Application.compile_env(
@@ -28,7 +28,8 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
       :circuit_opened_at_wall,
       :last_alert_sent_at,
       :last_alert_sent_at_wall,
-      :consecutive_open_checks
+      :consecutive_open_checks,
+      :ingest_source
     ]
   end
 
@@ -52,7 +53,9 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
 
   @impl true
   def init(_opts) do
-    Logger.info("[CircuitBreakerMonitor] Starting circuit breaker monitor")
+    # Determine which ingest source is active
+    ingest_source = determine_ingest_source()
+    Logger.info("[CircuitBreakerMonitor] Starting circuit breaker monitor for #{ingest_source}")
 
     # Schedule first check
     schedule_check()
@@ -62,7 +65,8 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
       circuit_opened_at_wall: nil,
       last_alert_sent_at: nil,
       last_alert_sent_at_wall: nil,
-      consecutive_open_checks: 0
+      consecutive_open_checks: 0,
+      ingest_source: ingest_source
     }
 
     {:ok, state}
@@ -113,6 +117,7 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
       end
 
     status = %{
+      ingest_source: state.ingest_source,
       circuit_opened_at_wall: state.circuit_opened_at_wall,
       circuit_open_duration: circuit_open_duration,
       circuit_open_duration_ms: circuit_open_duration_ms,
@@ -128,13 +133,16 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
 
   # Private functions
 
+  defp determine_ingest_source do
+    if Config.start_r2z2?(), do: :r2z2, else: :none
+  end
+
   defp schedule_check do
     Process.send_after(self(), :check_circuit, @check_interval_ms)
   end
 
-  defp check_circuit_status(state) do
-    # Use cached version to avoid blocking
-    case RedisQ.get_circuit_status_cached() do
+  defp check_circuit_status(%State{ingest_source: :r2z2} = state) do
+    case WandererKills.Ingest.R2Z2.get_circuit_status_cached() do
       {:ok, %{circuit_state: :open} = circuit_status} ->
         handle_open_circuit(state, circuit_status)
 
@@ -142,14 +150,17 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
         handle_closed_circuit(state)
 
       _ ->
-        # Unknown response, just continue
         state
     end
   end
 
+  defp check_circuit_status(state), do: state
+
   defp handle_open_circuit(state, circuit_status) do
     now = System.monotonic_time(:millisecond)
     now_wall = DateTime.utc_now() |> DateTime.to_iso8601()
+
+    source_label = source_label(state.ingest_source)
 
     # Track when circuit first opened
     circuit_opened_at = state.circuit_opened_at || circuit_status.circuit_opened_at || now
@@ -162,7 +173,7 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
     consecutive_open_checks = state.consecutive_open_checks + 1
 
     Logger.warning(
-      "[CircuitBreakerMonitor] Circuit breaker is OPEN",
+      "[CircuitBreakerMonitor] #{source_label} circuit breaker is OPEN",
       consecutive_errors: circuit_status.consecutive_errors,
       open_duration_ms: open_duration_ms,
       consecutive_open_checks: consecutive_open_checks
@@ -186,25 +197,26 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
 
   defp handle_closed_circuit(state) do
     if state.circuit_opened_at do
+      source_label = source_label(state.ingest_source)
+
       Logger.info(
-        "[CircuitBreakerMonitor] Circuit breaker has recovered to CLOSED state",
+        "[CircuitBreakerMonitor] #{source_label} circuit breaker has recovered to CLOSED state",
         recovery_after_checks: state.consecutive_open_checks
       )
     end
 
-    # Reset state
+    # Reset state (preserve ingest_source)
     %State{
       circuit_opened_at: nil,
       circuit_opened_at_wall: nil,
       last_alert_sent_at: nil,
       last_alert_sent_at_wall: nil,
-      consecutive_open_checks: 0
+      consecutive_open_checks: 0,
+      ingest_source: state.ingest_source
     }
   end
 
   defp should_send_alert?(state, open_duration_ms) do
-    # Send alert if circuit has been open longer than threshold
-    # and we haven't sent an alert recently
     open_duration_ms >= @alert_threshold_ms and
       (state.last_alert_sent_at == nil or
          System.monotonic_time(:millisecond) - state.last_alert_sent_at >= @alert_threshold_ms)
@@ -212,26 +224,26 @@ defmodule WandererKills.Ingest.CircuitBreakerMonitor do
 
   defp send_alert(state, open_duration_ms) do
     open_duration_minutes = div(open_duration_ms, 60_000)
+    source_label = source_label(state.ingest_source)
 
     Logger.error(
-      "[CircuitBreakerMonitor] ALERT: Circuit breaker has been open for #{open_duration_minutes} minutes!",
+      "[CircuitBreakerMonitor] ALERT: #{source_label} circuit breaker has been open for #{open_duration_minutes} minutes!",
       consecutive_open_checks: state.consecutive_open_checks,
       action: "Manual intervention may be required"
     )
 
-    # Here you could add additional alerting mechanisms:
-    # - Send email/SMS alerts
-    # - Post to monitoring systems
-    # - Trigger automatic recovery attempts
-    # - Restart the RedisQ process (last resort)
-
-    # For now, we'll just log the alert
     :telemetry.execute(
       [:wanderer_kills, :circuit_breaker, :alert],
       %{duration_ms: open_duration_ms},
-      %{consecutive_checks: state.consecutive_open_checks}
+      %{
+        consecutive_checks: state.consecutive_open_checks,
+        ingest_source: state.ingest_source
+      }
     )
   end
+
+  defp source_label(:r2z2), do: "R2Z2"
+  defp source_label(other), do: other |> Atom.to_string() |> String.upcase()
 
   defp format_duration(ms) do
     seconds = div(ms, 1000)

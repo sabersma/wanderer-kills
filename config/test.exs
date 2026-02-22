@@ -11,7 +11,7 @@ config :wanderer_kills,
   # Service configuration
   services: [
     start_preloader: false,
-    start_redisq: false
+    start_r2z2: false
   ],
 
   # Cache configuration - stable TTL for tests to prevent flakiness
@@ -47,18 +47,6 @@ config :wanderer_kills,
     base_url: "https://zkb.test.local",
     request_timeout_ms: 1_000,
     batch_concurrency: 2
-  ],
-
-  # RedisQ configuration for tests
-  redisq: [
-    base_url: "https://redisq.test.local",
-    fast_interval_ms: 100,
-    idle_interval_ms: 100,
-    task_timeout_ms: 1_000,
-    retry: [
-      max_retries: 1,
-      base_delay: 100
-    ]
   ],
 
   # Parser configuration

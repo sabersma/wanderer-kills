@@ -13,7 +13,7 @@ defmodule WandererKills.Application do
     6. Observability/monitoring processes
     7. Phoenix Endpoint (WandererKillsWeb.Endpoint)
     8. Telemetry.Poller for periodic measurements
-    9. RedisQ for real-time killmail streaming (conditionally)
+    9. R2Z2 for real-time killmail streaming (conditionally)
   """
 
   use Application
@@ -43,7 +43,7 @@ defmodule WandererKills.Application do
     children =
       (core_children() ++ cache_children() ++ observability_children())
       |> maybe_web_components()
-      |> maybe_redisq()
+      |> maybe_r2z2()
       |> maybe_historical_streaming()
 
     # 4) Start the supervisor
@@ -78,13 +78,12 @@ defmodule WandererKills.Application do
       {Finch,
        name: WandererKills.Finch,
        pools: %{
-         :default => [size: 10, count: 2],
-         "https://zkillredisq.stream" => [
+         :default => [size: 10, count: 2, conn_max_idle_time: 90_000],
+         "https://r2z2.zkillboard.com" => [
            size: 2,
            count: 1,
-           conn_opts: [timeout: 60_000],
-           # >45s poll timeout; adjust via config if needed
-           conn_max_idle_time: 90_000
+           conn_opts: [timeout: 30_000],
+           conn_max_idle_time: 60_000
          ]
        }},
       WandererKills.Core.EtsOwner,
@@ -173,12 +172,12 @@ defmodule WandererKills.Application do
     end
   end
 
-  defp maybe_redisq(children) do
-    if Config.start_redisq?() do
+  defp maybe_r2z2(children) do
+    if Config.start_r2z2?() do
       children ++
         [
           WandererKills.Ingest.CircuitBreakerMonitor,
-          WandererKills.Ingest.RedisQ
+          WandererKills.Ingest.R2Z2
         ]
     else
       children

@@ -153,7 +153,7 @@ if config_env() == :test do
   config :wanderer_kills,
     services: [
       start_preloader: false,
-      start_redisq: false
+      start_r2z2: false
     ]
 end
 

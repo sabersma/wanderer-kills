@@ -113,8 +113,8 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
 
   Returns :ok if a token was available, {:error, _} otherwise.
   """
-  @spec check_rate_limit(:zkillboard | :esi | String.t()) :: :ok | {:error, Error.t()}
-  def check_rate_limit(service) when service in [:zkillboard, :esi] do
+  @spec check_rate_limit(:zkillboard | :r2z2 | :esi | String.t()) :: :ok | {:error, Error.t()}
+  def check_rate_limit(service) when service in [:zkillboard, :r2z2, :esi] do
     GenServer.call(__MODULE__, {:consume_token, service})
   end
 
@@ -136,7 +136,8 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
   Reserve a token for a request. Used for pre-flight checks.
   Returns a reservation ID that must be used when reporting the result.
   """
-  @spec reserve_token(:zkillboard | :esi | String.t()) :: {:ok, String.t()} | {:error, Error.t()}
+  @spec reserve_token(:zkillboard | :r2z2 | :esi | String.t()) ::
+          {:ok, String.t()} | {:error, Error.t()}
   def reserve_token(service_or_url) do
     service = determine_service(service_or_url)
 
@@ -153,7 +154,8 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
   For ESI: 2XX = 2 tokens, 3XX = 1 token, 4XX = 5 tokens, 5XX = 0 tokens
   For ZKB: Always 1 token regardless of status
   """
-  @spec report_request_result(String.t(), integer(), :zkillboard | :esi | String.t()) :: :ok
+  @spec report_request_result(String.t(), integer(), :zkillboard | :r2z2 | :esi | String.t()) ::
+          :ok
   def report_request_result(reservation_id, status_code, service_or_url) do
     if reservation_id == "no-reservation-needed" do
       :ok
@@ -166,8 +168,8 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
   # Helper to determine service from URL
   defp determine_service(url) when is_binary(url) do
     cond do
+      String.contains?(url, "r2z2.zkillboard.com") -> :r2z2
       String.contains?(url, "zkillboard.com") -> :zkillboard
-      String.contains?(url, "zkillredisq.stream") -> :zkillboard
       String.contains?(url, "esi.evetech.net") -> :esi
       true -> nil
     end
@@ -178,16 +180,16 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
   @doc """
   Gets the current state of a bucket (simple mode, for monitoring/debugging).
   """
-  @spec get_bucket_state(:zkillboard | :esi) :: map()
-  def get_bucket_state(service) when service in [:zkillboard, :esi] do
+  @spec get_bucket_state(:zkillboard | :r2z2 | :esi) :: map()
+  def get_bucket_state(service) when service in [:zkillboard, :r2z2, :esi] do
     GenServer.call(__MODULE__, {:get_bucket_state, service})
   end
 
   @doc """
   Resets a bucket to full capacity (simple mode, useful for testing).
   """
-  @spec reset_bucket(:zkillboard | :esi) :: :ok
-  def reset_bucket(service) when service in [:zkillboard, :esi] do
+  @spec reset_bucket(:zkillboard | :r2z2 | :esi) :: :ok
+  def reset_bucket(service) when service in [:zkillboard, :r2z2, :esi] do
     GenServer.cast(__MODULE__, {:reset_bucket, service})
   end
 
@@ -253,6 +255,8 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
 
     zkb_capacity = app_config[:zkb_capacity] || Keyword.get(opts, :zkb_capacity, 10)
     zkb_refill_rate = app_config[:zkb_refill_rate] || Keyword.get(opts, :zkb_refill_rate, 10)
+    r2z2_capacity = app_config[:r2z2_capacity] || Keyword.get(opts, :r2z2_capacity, 10)
+    r2z2_refill_rate = app_config[:r2z2_refill_rate] || Keyword.get(opts, :r2z2_refill_rate, 10)
     esi_capacity = app_config[:esi_capacity] || Keyword.get(opts, :esi_capacity, 500)
     esi_refill_rate = app_config[:esi_refill_rate] || Keyword.get(opts, :esi_refill_rate, 3000)
 
@@ -261,6 +265,12 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
         tokens: zkb_capacity * 1.0,
         capacity: zkb_capacity,
         refill_rate: zkb_refill_rate,
+        last_refill: System.monotonic_time(:millisecond)
+      },
+      r2z2: %{
+        tokens: r2z2_capacity * 1.0,
+        capacity: r2z2_capacity,
+        refill_rate: r2z2_refill_rate,
         last_refill: System.monotonic_time(:millisecond)
       },
       esi: %{
@@ -284,6 +294,8 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
       config: %{
         zkb_capacity: zkb_capacity,
         zkb_refill_rate: zkb_refill_rate,
+        r2z2_capacity: r2z2_capacity,
+        r2z2_refill_rate: r2z2_refill_rate,
         esi_capacity: esi_capacity,
         esi_refill_rate: esi_refill_rate
       }
@@ -295,6 +307,8 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
     Logger.info("[SmartRateLimiter] Started in simple mode",
       zkb_capacity: zkb_capacity,
       zkb_refill_rate: zkb_refill_rate,
+      r2z2_capacity: r2z2_capacity,
+      r2z2_refill_rate: r2z2_refill_rate,
       esi_capacity: esi_capacity,
       esi_refill_rate: esi_refill_rate
     )
@@ -388,6 +402,7 @@ defmodule WandererKills.Ingest.SmartRateLimiter do
       mode: :simple,
       service_buckets: state.service_buckets,
       zkb_tokens: get_in(state.service_buckets, [:zkillboard, :tokens]) || 0,
+      r2z2_tokens: get_in(state.service_buckets, [:r2z2, :tokens]) || 0,
       esi_tokens: get_in(state.service_buckets, [:esi, :tokens]) || 0
     }
 
