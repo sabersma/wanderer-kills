@@ -17,7 +17,7 @@ defmodule WandererKillsWeb.HealthController do
   alias WandererKills.Core.Support.Error
   alias WandererKills.Dashboard
   alias WandererKills.Http.ConnectionMonitor
-  alias WandererKills.Ingest.RedisQ
+  alias WandererKills.Ingest.R2Z2
   alias WandererKills.Utils
 
   @doc """
@@ -86,15 +86,15 @@ defmodule WandererKillsWeb.HealthController do
 
   defp get_circuit_status do
     # Prefer ETS-cached status; fall back to a bounded GenServer call.
-    with {:ok, status} <- RedisQ.get_circuit_status_cached(),
-         true <- is_map(status) do
-      status
+    with {:ok, status} <- R2Z2.get_circuit_status_cached(),
+         {:ok, normalized} <- validate_circuit_status(status) do
+      normalized
     else
       _ ->
         try do
-          case RedisQ.get_circuit_status(1000) do
+          case R2Z2.get_circuit_status(1000) do
             {:ok, status} when is_map(status) ->
-              status
+              normalize_circuit_status(status)
 
             other ->
               Logger.error(
@@ -114,6 +114,40 @@ defmodule WandererKillsWeb.HealthController do
           :exit, {:noproc, _} ->
             %{circuit_state: :unknown, error: "not_running"}
         end
+    end
+  end
+
+  defp validate_circuit_status(status) when is_map(status) do
+    cs = Map.get(status, :circuit_state)
+    err = Map.get(status, :error)
+
+    if is_atom(cs) and (is_nil(err) or is_binary(err)) do
+      {:ok, status}
+    else
+      :error
+    end
+  end
+
+  defp validate_circuit_status(_), do: :error
+
+  defp normalize_circuit_status(status) when is_map(status) do
+    status
+    |> ensure_atom_circuit_state()
+    |> sanitize_error()
+  end
+
+  defp ensure_atom_circuit_state(status) do
+    case Map.get(status, :circuit_state) do
+      cs when is_atom(cs) -> status
+      _ -> Map.put(status, :circuit_state, :unknown)
+    end
+  end
+
+  defp sanitize_error(status) do
+    case Map.get(status, :error) do
+      nil -> status
+      err when is_binary(err) -> status
+      _ -> Map.put(status, :error, nil)
     end
   end
 
@@ -209,12 +243,11 @@ defmodule WandererKillsWeb.HealthController do
     %{
       api_requests_per_minute: calculate_api_requests(metrics),
       active_subscriptions: get_metric(metrics, [:websocket, :connections_active], 0),
-      killmails_stored: get_metric(metrics, [:processing, :redisq_received], 0),
+      killmails_stored: get_metric(metrics, [:processing, :killmails_received], 0),
       cache_hit_rate: get_metric(metrics, [:cache, :hit_rate], 0.0),
       memory_usage_mb: calculate_memory_usage(metrics),
       uptime_hours: calculate_uptime(metrics),
-      processing_lag_seconds:
-        get_metric(metrics, [:processing, :redisq_last_killmail_ago_seconds], 0),
+      processing_lag_seconds: get_metric(metrics, [:processing, :last_killmail_ago_seconds], 0),
       active_preload_tasks: get_metric(metrics, [:preload, :active_tasks], 0)
     }
   end

@@ -3,11 +3,11 @@
 ## Check if kills are being received from zKillboard
 
 ```elixir
-# Get RedisQ statistics to see if kills are coming in
-WandererKills.Ingest.RedisQ.get_stats()
+# Get R2Z2 statistics to see if kills are coming in
+WandererKills.Ingest.R2Z2.get_stats()
 
-# Force a manual RedisQ poll
-WandererKills.Ingest.RedisQ.poll_and_process()
+# Force a manual R2Z2 poll
+WandererKills.Ingest.R2Z2.poll_and_process()
 ```
 
 ## Check websocket subscriptions
@@ -55,21 +55,22 @@ Logger.configure(level: :info)
 
 ## Check if specific kills are being processed
 
-With the logging added to RedisQ, you should see info-level messages like:
-```
-[RedisQ] Kill received killmail_id=123456 system_id=30000142 timestamp=2025-08-01T06:52:24Z
+With the logging added to R2Z2, you should see info-level messages like:
+
+```text
+[R2Z2] Kill received killmail_id=123456 system_id=30000142 timestamp=2025-08-01T06:52:24Z
 ```
 
 ## Troubleshooting workflow
 
-1. **Check if kills are coming in**: Run `WandererKills.Ingest.RedisQ.get_stats()` - look for `kills_processed` > 0
+1. **Check if killmails are coming in**: Run `WandererKills.Ingest.R2Z2.get_stats()` - look for `killmails_received` > 0
 2. **Check subscriptions**: Run websocket subscription commands to see what systems/characters are subscribed
 3. **Monitor broadcasts**: Subscribe to PubSub topics for your systems and see if messages come through
 4. **Compare system IDs**: Match the system IDs from kill logs with your subscription system IDs
 
 ## Common issues
 
-- **No kills received**: RedisQ not receiving from zKillboard
+- **No kills received**: R2Z2 not receiving from zKillboard
 - **Kills received but no broadcasts**: Problem with PubSub broadcasting
 - **Broadcasts but no websocket delivery**: Problem with websocket channel filtering or subscription matching
 - **System ID mismatch**: Websocket subscribed to different systems than where kills are happening

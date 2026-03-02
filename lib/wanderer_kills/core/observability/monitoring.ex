@@ -103,8 +103,8 @@ defmodule WandererKills.Core.Observability.Monitoring do
           system: %{uptime_seconds: 0},
           websocket: %{},
           processing: %{
-            redisq_received: 0,
-            redisq_last_killmail_ago_seconds: nil,
+            killmails_received: 0,
+            last_killmail_ago_seconds: nil,
             processing_lag_seconds: 0
           }
         }
@@ -624,28 +624,28 @@ defmodule WandererKills.Core.Observability.Monitoring do
 
   @spec get_processing_stats() :: map()
   defp get_processing_stats do
-    # Try to get RedisQ stats from ETS
-    redisq_stats =
-      case :ets.lookup(EtsOwner.wanderer_kills_stats_table(), :redisq_stats) do
-        [{:redisq_stats, stats}] -> stats
+    # Try to get R2Z2 stats from ETS
+    r2z2_stats =
+      case :ets.lookup(EtsOwner.wanderer_kills_stats_table(), :r2z2_stats) do
+        [{:r2z2_stats, stats}] -> stats
         _ -> %{}
       end
 
     # Calculate processing metrics
-    redisq_received = Map.get(redisq_stats, :total_kills_received, 0)
-    last_kill_at = Map.get(redisq_stats, :last_kill_received_at)
+    killmails_received = Map.get(r2z2_stats, :total_killmails_received, 0)
+    last_killmail_at = Map.get(r2z2_stats, :last_killmail_received_at)
 
     last_killmail_ago_seconds =
-      if last_kill_at do
-        System.system_time(:second) - last_kill_at
+      if last_killmail_at do
+        System.system_time(:second) - last_killmail_at
       else
         # Never received
         999_999
       end
 
     %{
-      redisq_received: redisq_received,
-      redisq_last_killmail_ago_seconds: last_killmail_ago_seconds,
+      killmails_received: killmails_received,
+      last_killmail_ago_seconds: last_killmail_ago_seconds,
       # Not currently tracked
       processing_lag_seconds: 0
     }

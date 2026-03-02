@@ -99,6 +99,10 @@ defmodule WandererKills.TestContexts do
     def get_zkb(_url, _headers \\ [], _opts \\ []) do
       {:ok, %{status: 200, body: "{}", headers: []}}
     end
+
+    def get_r2z2(_url, _headers \\ [], _opts \\ []) do
+      {:ok, %{status: 200, body: "{}", headers: []}}
+    end
   end
 
   # Default ESI mock implementation

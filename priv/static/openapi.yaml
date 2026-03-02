@@ -3,8 +3,8 @@ info:
   title: WandererKills API
   description: |
     Real-time EVE Online killmail data service providing multiple integration patterns
-    for consuming killmail data. The service fetches data from zKillboard's RedisQ
-    stream and enriches it with ESI (EVE Swagger Interface) data.
+    for consuming killmail data. The service fetches data from zKillboard's R2Z2
+    API and enriches it with ESI (EVE Swagger Interface) data.
   version: 1.0.0
   contact:
     name: API Support

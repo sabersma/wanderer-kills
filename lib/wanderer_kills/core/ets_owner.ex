@@ -55,25 +55,26 @@ defmodule WandererKills.Core.EtsOwner do
         # Pre-seed with default values to prevent crashes on early reads
         now = DateTime.utc_now()
 
-        # Initialize RedisQ stats
+        # Initialize R2Z2 stats
         :ets.insert(
           @wanderer_kills_stats_table,
-          {:redisq_stats,
+          {:r2z2_stats,
            %{
-             kills_received: 0,
-             kills_older: 0,
-             kills_skipped: 0,
-             legacy_kills: 0,
+             killmails_received: 0,
+             killmails_older: 0,
+             killmails_skipped: 0,
              errors: 0,
              no_kills_count: 0,
+             circuit_open_skips: 0,
              last_reset: now,
+             last_killmail_received_at: nil,
              systems_active: MapSet.new(),
-             total_kills_received: 0,
-             total_kills_older: 0,
-             total_kills_skipped: 0,
-             total_legacy_kills: 0,
+             total_killmails_received: 0,
+             total_killmails_older: 0,
+             total_killmails_skipped: 0,
              total_errors: 0,
-             total_no_kills_count: 0
+             total_no_kills_count: 0,
+             total_circuit_open_skips: 0
            }}
         )
 
