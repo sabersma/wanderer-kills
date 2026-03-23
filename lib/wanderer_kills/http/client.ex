@@ -452,7 +452,20 @@ defmodule WandererKills.Http.Client do
 
   defp do_finch_request_with_retry(request, finch_name, options, retry_count)
        when retry_count < 3 do
-    Finch.request(request, finch_name, options)
+    case Finch.request(request, finch_name, options) do
+      {:error, %Mint.TransportError{reason: :closed}} when retry_count < 2 ->
+        delay_ms = 100 * (retry_count + 1)
+
+        Logger.debug(
+          "[HTTP] Connection closed, retrying in #{delay_ms}ms (attempt #{retry_count + 1}/2)"
+        )
+
+        Process.sleep(delay_ms)
+        do_finch_request_with_retry(request, finch_name, options, retry_count + 1)
+
+      result ->
+        result
+    end
   rescue
     error ->
       if is_process_unavailable_error?(error) and retry_count < 2 do
