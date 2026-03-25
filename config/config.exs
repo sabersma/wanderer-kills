@@ -51,6 +51,8 @@ config :wanderer_kills,
     # Simple mode configuration (backward compatible with old RateLimiter)
     zkb_capacity: 300,
     zkb_refill_rate: 200,
+    r2z2_capacity: 30,
+    r2z2_refill_rate: 600,
     esi_capacity: 500,
     esi_refill_rate: 3000,
 
