@@ -27,12 +27,12 @@ defmodule WandererKills.Http.Client do
   @esi_timeout_ms Application.compile_env(:wanderer_kills, [:esi, :request_timeout_ms], 30_000)
   @zkb_timeout_ms Application.compile_env(:wanderer_kills, [:zkb, :request_timeout_ms], 15_000)
 
-  # RedisQ long-polling requires longer timeout
-  @redisq_timeout_ms Application.compile_env(
-                       :wanderer_kills,
-                       [:redisq, :request_timeout_ms],
-                       45_000
-                     )
+  # R2Z2 API timeout
+  @r2z2_timeout_ms Application.compile_env(
+                     :wanderer_kills,
+                     [:r2z2, :request_timeout_ms],
+                     15_000
+                   )
 
   @type url :: String.t()
   @type headers :: [{String.t(), String.t()}]
@@ -107,13 +107,12 @@ defmodule WandererKills.Http.Client do
   end
 
   @doc """
-  GET request specifically for RedisQ long-polling endpoints.
-  Includes longer timeout and connection handling for long-polling.
+  GET request specifically for R2Z2 API endpoints.
   """
-  @spec get_redisq(url, headers, options) :: response
-  def get_redisq(url, headers \\ [], options \\ []) do
-    options = Keyword.put_new(options, :timeout, @redisq_timeout_ms)
-    do_get(url, headers, options)
+  @spec get_r2z2(url, headers, options) :: response
+  def get_r2z2(url, headers \\ [], options \\ []) do
+    options = Keyword.put_new(options, :timeout, @r2z2_timeout_ms)
+    get_with_rate_limit(url, headers, options)
   end
 
   # ============================================================================
@@ -206,8 +205,7 @@ defmodule WandererKills.Http.Client do
 
   defp should_rate_limit?(url) do
     String.contains?(url, "esi.evetech.net") or
-      String.contains?(url, "zkillboard.com") or
-      String.contains?(url, "zkillredisq.stream")
+      String.contains?(url, "zkillboard.com")
   end
 
   defp build_headers(headers) do
@@ -454,7 +452,20 @@ defmodule WandererKills.Http.Client do
 
   defp do_finch_request_with_retry(request, finch_name, options, retry_count)
        when retry_count < 3 do
-    Finch.request(request, finch_name, options)
+    case Finch.request(request, finch_name, options) do
+      {:error, %Mint.TransportError{reason: :closed}} when retry_count < 2 ->
+        delay_ms = 100 * (retry_count + 1)
+
+        Logger.debug(
+          "[HTTP] Connection closed, retrying in #{delay_ms}ms (attempt #{retry_count + 1}/2)"
+        )
+
+        Process.sleep(delay_ms)
+        do_finch_request_with_retry(request, finch_name, options, retry_count + 1)
+
+      result ->
+        result
+    end
   rescue
     error ->
       if is_process_unavailable_error?(error) and retry_count < 2 do

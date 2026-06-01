@@ -135,25 +135,17 @@ defmodule WandererKills.TestHelpers do
   Sets up common mocks for testing.
   """
   def setup_mocks do
-    # Set global mode if not already set
-    if function_exported?(Mox, :global_mode?, 0) do
-      unless Mox.global_mode?() do
-        Mox.set_mox_global()
-      end
-    else
-      # Fallback: try to set global mode, rescue only the specific error
-      try do
-        Mox.set_mox_global()
-      rescue
-        error in [RuntimeError] ->
-          # Only catch the specific "already in global mode" error
-          if error.message =~ ~r/already (in|set to) global mode/i do
-            :ok
-          else
-            # Re-raise any other RuntimeError
-            reraise error, __STACKTRACE__
-          end
-      end
+    # Set global mode if not already set - try/rescue to handle idempotent calls
+    try do
+      Mox.set_mox_global()
+    rescue
+      error in [RuntimeError] ->
+        # Only catch the specific "already in global mode" error
+        if error.message =~ ~r/already (in|set to) global mode/i do
+          :ok
+        else
+          reraise error, __STACKTRACE__
+        end
     end
 
     setup_http_client_mocks()
@@ -169,11 +161,15 @@ defmodule WandererKills.TestHelpers do
     Mox.stub(ClientMock, :get_with_rate_limit, &mock_http_get_with_rate_limit/3)
 
     Mox.stub(ClientMock, :post, fn _url, _body, _headers, _opts ->
-      {:ok, %{status: 200, body: Jason.encode!(%{"data" => "mock_response"})}}
+      default_mock_response()
     end)
 
     Mox.stub(ClientMock, :get_esi, &mock_http_get_esi/3)
     Mox.stub(ClientMock, :get_zkb, &mock_http_get_zkb/3)
+
+    Mox.stub(ClientMock, :get_r2z2, fn url, headers, _opts ->
+      mock_http_response(url, headers)
+    end)
   end
 
   defp mock_http_get(url, _headers, _opts) do
@@ -188,7 +184,7 @@ defmodule WandererKills.TestHelpers do
         mock_universe_corporations_response(url)
 
       true ->
-        {:ok, %{status: 200, body: Jason.encode!(%{"data" => "mock_response"})}}
+        default_mock_response()
     end
   end
 
@@ -241,7 +237,7 @@ defmodule WandererKills.TestHelpers do
         {:ok, %{status: 200, body: Jason.encode!([])}}
 
       true ->
-        {:ok, %{status: 200, body: Jason.encode!(%{"data" => "mock_response"})}}
+        default_mock_response()
     end
   end
 
@@ -259,12 +255,17 @@ defmodule WandererKills.TestHelpers do
       String.contains?(url, "zkillboard.com/api/killID") ->
         mock_zkb_killmail_response(url)
 
-      String.contains?(url, "redisq.zkillboard.com") ->
-        {:ok, %{status: 200, body: Jason.encode!(%{package: nil})}}
-
       true ->
         {:ok, %{status: 200, body: Jason.encode!([])}}
     end
+  end
+
+  defp default_mock_response do
+    {:ok, %{status: 200, body: Jason.encode!(%{"data" => "mock_response"})}}
+  end
+
+  defp mock_http_response(_url, _headers) do
+    default_mock_response()
   end
 
   defp mock_zkb_killmail_response(url) do

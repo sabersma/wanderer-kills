@@ -9,6 +9,20 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
 
   - `MEMORY_THRESHOLD_MB` - Memory threshold in MB for cleanup warning (default: 1000)
   - `EMERGENCY_MEMORY_THRESHOLD_MB` - Emergency memory threshold in MB for forced cleanup (default: 1500)
+
+  ## Configuration
+
+  ```elixir
+  config :wanderer_kills, :storage,
+    memory_threshold_mb: 1000,           # Standard cleanup threshold
+    emergency_threshold_mb: 1500,        # Emergency cleanup threshold
+    memory_check_interval_ms: 30_000,    # How often to check memory
+    cleanup_cooldown_ms: 300_000         # 5 minute cooldown between cleanups
+  ```
+
+  The cooldown prevents log spam when memory is above threshold but cleanup
+  cannot reduce it (e.g., all data is within retention period). During cooldown,
+  standard cleanup is skipped but emergency cleanup still runs if needed.
   """
 
   use GenServer
@@ -18,6 +32,10 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
 
   # Default check interval if not configured
   @default_check_interval :timer.seconds(30)
+
+  # Default cooldown after cleanup before allowing another cleanup
+  # Prevents log spam when cleanup doesn't reduce memory
+  @default_cleanup_cooldown_ms :timer.minutes(5)
 
   # ============================================================================
   # Client API
@@ -79,10 +97,15 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
 
     emergency_removal_percentage = Keyword.get(storage_config, :emergency_removal_percentage, 25)
 
+    # Cleanup cooldown - prevents repeated cleanup when it doesn't help
+    cleanup_cooldown_ms =
+      Keyword.get(storage_config, :cleanup_cooldown_ms, @default_cleanup_cooldown_ms)
+
     Logger.info("[MemoryMonitor] Starting ETS memory monitor",
       memory_threshold_mb: memory_threshold_mb,
       emergency_threshold_mb: emergency_threshold_mb,
       check_interval_ms: check_interval_ms,
+      cleanup_cooldown_ms: cleanup_cooldown_ms,
       emergency_killmail_threshold: emergency_killmail_threshold,
       emergency_removal_percentage: emergency_removal_percentage,
       effective_thresholds: "#{memory_threshold_mb}MB/#{emergency_threshold_mb}MB"
@@ -94,11 +117,13 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
     state = %{
       last_check: nil,
       last_cleanup: nil,
+      last_cleanup_stats: nil,
       cleanup_count: 0,
       emergency_cleanup_count: 0,
       memory_threshold_mb: memory_threshold_mb,
       emergency_threshold_mb: emergency_threshold_mb,
       check_interval_ms: check_interval_ms,
+      cleanup_cooldown_ms: cleanup_cooldown_ms,
       emergency_killmail_threshold: emergency_killmail_threshold,
       emergency_removal_percentage: emergency_removal_percentage
     }
@@ -114,8 +139,12 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
       Map.merge(stats, %{
         last_check: state.last_check,
         last_cleanup: state.last_cleanup,
+        last_cleanup_stats: state.last_cleanup_stats,
         cleanup_count: state.cleanup_count,
-        emergency_cleanup_count: state.emergency_cleanup_count
+        emergency_cleanup_count: state.emergency_cleanup_count,
+        cleanup_cooldown_ms: state.cleanup_cooldown_ms,
+        cooldown_remaining_s: remaining_cooldown_seconds(state),
+        in_cooldown: not cleanup_cooldown_elapsed?(state)
       })
 
     {:reply, response, state}
@@ -155,6 +184,7 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
 
     cond do
       stats.ets_memory_mb > state.emergency_threshold_mb ->
+        # Emergency cleanup always runs regardless of cooldown
         Logger.warning("[MemoryMonitor] Emergency memory threshold exceeded!",
           ets_memory_mb: stats.ets_memory_mb,
           threshold_mb: state.emergency_threshold_mb
@@ -163,15 +193,53 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
         perform_emergency_cleanup(new_state)
 
       stats.ets_memory_mb > state.memory_threshold_mb ->
-        Logger.warning("[MemoryMonitor] Memory threshold exceeded",
-          ets_memory_mb: stats.ets_memory_mb,
-          threshold_mb: state.memory_threshold_mb
-        )
+        # Check cooldown before standard cleanup
+        if cleanup_cooldown_elapsed?(new_state) do
+          Logger.warning("[MemoryMonitor] Memory threshold exceeded",
+            ets_memory_mb: stats.ets_memory_mb,
+            threshold_mb: state.memory_threshold_mb,
+            killmail_count: stats.killmail_count
+          )
 
-        perform_standard_cleanup(new_state)
+          perform_standard_cleanup(new_state)
+        else
+          # Still above threshold but in cooldown - log at debug level only
+          remaining_cooldown = remaining_cooldown_seconds(new_state)
+
+          Logger.debug(
+            "[MemoryMonitor] Memory above threshold but in cooldown (#{remaining_cooldown}s remaining)",
+            ets_memory_mb: stats.ets_memory_mb,
+            threshold_mb: state.memory_threshold_mb
+          )
+
+          new_state
+        end
 
       true ->
         new_state
+    end
+  end
+
+  defp cleanup_cooldown_elapsed?(state) do
+    case state.last_cleanup do
+      nil ->
+        true
+
+      last_cleanup ->
+        elapsed_ms = DateTime.diff(DateTime.utc_now(), last_cleanup, :millisecond)
+        elapsed_ms >= state.cleanup_cooldown_ms
+    end
+  end
+
+  defp remaining_cooldown_seconds(state) do
+    case state.last_cleanup do
+      nil ->
+        0
+
+      last_cleanup ->
+        elapsed_ms = DateTime.diff(DateTime.utc_now(), last_cleanup, :millisecond)
+        remaining_ms = max(0, state.cleanup_cooldown_ms - elapsed_ms)
+        div(remaining_ms, 1000)
     end
   end
 
@@ -223,15 +291,49 @@ defmodule WandererKills.Core.Storage.MemoryMonitor do
     Logger.info("[MemoryMonitor] Triggering standard memory cleanup")
 
     # Trigger immediate cleanup
-    case CleanupWorker.cleanup_now() do
-      {:ok, stats} ->
-        Logger.info("[MemoryMonitor] Standard cleanup completed", stats)
+    {cleanup_stats, new_state} =
+      case CleanupWorker.cleanup_now() do
+        {:ok, stats} ->
+          total_removed =
+            Map.get(stats, :killmails_removed, 0) +
+              Map.get(stats, :events_removed, 0) +
+              Map.get(stats, :client_offsets_removed, 0)
 
-      {:error, reason} ->
-        Logger.error("[MemoryMonitor] Standard cleanup failed", error: reason)
+          if total_removed == 0 do
+            Logger.info(
+              "[MemoryMonitor] Standard cleanup completed - no old data to remove (all data within retention period)"
+            )
+          else
+            Logger.info("[MemoryMonitor] Standard cleanup completed",
+              killmails_removed: Map.get(stats, :killmails_removed, 0),
+              events_removed: Map.get(stats, :events_removed, 0),
+              client_offsets_removed: Map.get(stats, :client_offsets_removed, 0)
+            )
+          end
+
+          {stats,
+           %{
+             state
+             | last_cleanup: DateTime.utc_now(),
+               last_cleanup_stats: stats,
+               cleanup_count: state.cleanup_count + 1
+           }}
+
+        {:error, reason} ->
+          Logger.error("[MemoryMonitor] Standard cleanup failed", error: reason)
+
+          {nil, state}
+      end
+
+    # Log hint if cleanup didn't help
+    if cleanup_stats && Map.get(cleanup_stats, :killmails_removed, 0) == 0 do
+      Logger.info(
+        "[MemoryMonitor] Hint: Memory above threshold but no old data to clean. " <>
+          "Consider increasing MEMORY_THRESHOLD_MB or reducing KILLMAIL_RETENTION_DAYS"
+      )
     end
 
-    %{state | last_cleanup: DateTime.utc_now(), cleanup_count: state.cleanup_count + 1}
+    new_state
   end
 
   defp perform_emergency_cleanup(state) do

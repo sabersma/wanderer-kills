@@ -8,7 +8,7 @@ defmodule WandererKills.Ingest.Boundary do
 
   ## Responsibilities
   - External API client management (ESI, zKillboard)
-  - Real-time data streaming (RedisQ)
+  - Real-time data streaming (R2Z2)
   - Killmail processing pipeline
   - Data enrichment and validation
   - Rate limiting for external APIs
@@ -45,6 +45,6 @@ defmodule WandererKills.Ingest.Boundary do
       WandererKills.Ingest.SmartRateLimiter,
 
       # Real-time streaming
-      WandererKills.Ingest.RedisQ
+      WandererKills.Ingest.R2Z2
     ]
 end

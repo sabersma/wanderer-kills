@@ -260,8 +260,16 @@ defmodule WandererKills.Ingest.HistoricalFetcher do
 
     new_state = %{state | active_tasks: new_active_tasks, requests: new_requests}
 
-    # Send completion notification
-    send_preload_complete(subscription_id, Map.get(new_requests, subscription_id))
+    # Send completion notification if request still exists
+    case Map.get(new_requests, subscription_id) do
+      nil ->
+        Logger.warning("Skipping preload complete notification - request not found",
+          subscription_id: subscription_id
+        )
+
+      request ->
+        send_preload_complete(subscription_id, request)
+    end
 
     {:noreply, new_state}
   end
@@ -485,7 +493,7 @@ defmodule WandererKills.Ingest.HistoricalFetcher do
       :ok ->
         handle_page_processing(request, page_kills, buffer_pid)
 
-      {:error, %Error{type: :rate_limit, details: details}} ->
+      {:error, %Error{type: :rate_limited, details: details}} ->
         # Use retry_after_ms from rate limiter if available, otherwise fallback to 60s
         retry_after_ms = get_in(details, [:retry_after_ms]) || 60_000
 

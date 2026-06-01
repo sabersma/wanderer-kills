@@ -49,7 +49,6 @@ defmodule WandererKills.Core.Support.Error do
           | :zkb
           | :parsing
           | :enrichment
-          | :redis_q
           | :ship_types
           | :validation
           | :config
@@ -134,11 +133,6 @@ defmodule WandererKills.Core.Support.Error do
   @spec enrichment_error(error_type(), String.t(), boolean(), details()) :: t()
   def enrichment_error(type, message, retryable \\ false, details \\ nil),
     do: new(:enrichment, type, message, retryable, details)
-
-  @doc "Creates a RedisQ error"
-  @spec redisq_error(error_type(), String.t(), boolean(), details()) :: t()
-  def redisq_error(type, message, retryable \\ true, details \\ nil),
-    do: new(:redis_q, type, message, retryable, details)
 
   @doc "Creates a ship types error"
   @spec ship_types_error(error_type(), String.t(), boolean(), details()) :: t()

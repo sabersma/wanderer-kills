@@ -28,7 +28,7 @@ config :wanderer_kills,
     client: WandererKills.Http.Client,
     request_timeout_ms: 10_000,
     default_timeout_ms: 10_000,
-    redisq_conn_max_idle_time_ms: 90_000,
+    conn_max_idle_time_ms: 90_000,
     retry: [
       max_retries: 3,
       base_delay: 1000,
@@ -51,6 +51,8 @@ config :wanderer_kills,
     # Simple mode configuration (backward compatible with old RateLimiter)
     zkb_capacity: 300,
     zkb_refill_rate: 200,
+    r2z2_capacity: 30,
+    r2z2_refill_rate: 600,
     esi_capacity: 500,
     esi_refill_rate: 3000,
 
@@ -64,20 +66,16 @@ config :wanderer_kills,
     max_queue_size: 5000
   ],
 
-  # RedisQ stream configuration
-  redisq: [
-    base_url: "https://zkillredisq.stream/listen.php",
-    fast_interval_ms: 1_000,
-    idle_interval_ms: 5_000,
+  # R2Z2 stream configuration
+  r2z2: [
+    base_url: "https://r2z2.zkillboard.com/ephemeral",
+    poll_interval_ms: 100,
+    idle_interval_ms: 6_000,
     initial_backoff_ms: 1_000,
-    max_backoff_ms: 30_000,
+    max_backoff_ms: 60_000,
     backoff_factor: 2,
     task_timeout_ms: 10_000,
-    request_timeout_ms: 45_000,
-    retry: [
-      max_retries: 5,
-      base_delay: 500
-    ]
+    request_timeout_ms: 15_000
   ],
 
   # Circuit breaker monitor configuration
@@ -189,7 +187,7 @@ config :wanderer_kills,
   # Service startup configuration
   services: [
     start_preloader: true,
-    start_redisq: true
+    start_r2z2: true
   ],
 
   # Ship types configuration - data loaded from priv/data/ship_group_ids.json

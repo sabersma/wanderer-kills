@@ -127,7 +127,7 @@ defmodule WandererKills.Ingest.Killmails.ZkbClient do
     {:ok, List.first(killmails)}
   end
 
-  defp handle_killmail_error(%Error{type: :rate_limit} = error, killmail_id) do
+  defp handle_killmail_error(%Error{type: :rate_limited} = error, killmail_id) do
     Telemetry.fetch_system_error(killmail_id, error, :zkb)
 
     Logger.warning("Rate limit exceeded for zkillboard",
@@ -268,7 +268,7 @@ defmodule WandererKills.Ingest.Killmails.ZkbClient do
     {:error, error}
   end
 
-  defp handle_system_killmails_error(%Error{type: :rate_limit} = error, system_id) do
+  defp handle_system_killmails_error(%Error{type: :rate_limited} = error, system_id) do
     Telemetry.fetch_system_error(system_id, error, :zkb)
 
     Logger.warning("Rate limit exceeded for zkillboard",
@@ -346,7 +346,7 @@ defmodule WandererKills.Ingest.Killmails.ZkbClient do
       {:ok, response} ->
         {:ok, response.body}
 
-      {:error, %Error{type: :rate_limit} = error} ->
+      {:error, %Error{type: :rate_limited} = error} ->
         log_rate_limit_error(entity_type, entity_id, operation_atom, error)
         {:error, error}
 
@@ -771,7 +771,7 @@ defmodule WandererKills.Ingest.Killmails.ZkbClient do
   defp typeof(term) when is_number(term), do: "number"
   defp typeof(_term), do: "unknown"
 
-  defp handle_history_error(%Error{type: :rate_limit} = error, date) do
+  defp handle_history_error(%Error{type: :rate_limited} = error, date) do
     Logger.warning("Rate limit exceeded for zkillboard history",
       date: date,
       operation: :fetch_history,

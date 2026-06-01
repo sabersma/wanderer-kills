@@ -74,12 +74,12 @@ defmodule WandererKills.Config do
   end
 
   @doc """
-  Check if RedisQ service should start.
+  Check if R2Z2 service should start.
   This is commonly checked at runtime based on environment.
   """
-  @spec start_redisq?() :: boolean()
-  def start_redisq? do
+  @spec start_r2z2?() :: boolean()
+  def start_r2z2? do
     services = Application.get_env(:wanderer_kills, :services, [])
-    Keyword.get(services, :start_redisq, true)
+    Keyword.get(services, :start_r2z2, true)
   end
 end

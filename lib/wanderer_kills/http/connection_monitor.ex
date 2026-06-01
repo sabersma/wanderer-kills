@@ -7,7 +7,7 @@ defmodule WandererKills.Http.ConnectionMonitor do
                             )
   @conn_max_idle_time Application.compile_env(
                         :wanderer_kills,
-                        [:http, :redisq_conn_max_idle_time_ms],
+                        [:http, :conn_max_idle_time_ms],
                         90_000
                       )
   @moduledoc """
@@ -268,28 +268,22 @@ defmodule WandererKills.Http.ConnectionMonitor do
   end
 
   defp recycle_connection_pool do
+    # Finch 0.20.0 has built-in connection recycling via conn_max_idle_time.
+    # Restarting the entire Finch process is too aggressive and causes race
+    # conditions where requests fail during the restart window. Instead we
+    # rely on Finch's built-in idle connection management (configured with
+    # conn_max_idle_time) and only emit telemetry here so monitors can track
+    # recycling events.
     :telemetry.execute(
       [:wanderer_kills, :connection_monitor, :recycle],
       %{count: 1, conn_max_idle_time: @conn_max_idle_time},
       %{reason: :proactive}
     )
 
-    perform_finch_swap()
-
     :telemetry.execute(
       [:wanderer_kills, :http, :connection_recycled],
       %{count: 1},
       %{}
     )
-  end
-
-  defp perform_finch_swap do
-    # Finch 0.20.0 has built-in connection recycling via conn_max_idle_time
-    # Restarting the entire Finch process is too aggressive and causes race conditions
-    # where requests fail during the restart window.
-    #
-    # Instead, rely on Finch's built-in idle connection management
-    # (configured with conn_max_idle_time: 90_000)
-    :ok
   end
 end

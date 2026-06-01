@@ -225,8 +225,6 @@ defmodule WandererKills.Ingest.SmartRateLimiterESITest do
                  "https://zkillboard.com/api/kills/systemID/30000142/"
                )
 
-      assert {:ok, _} = SmartRateLimiter.reserve_token("https://zkillredisq.stream/listen.php")
-
       # Unknown URLs should not require reservation
       assert {:ok, "no-reservation-needed"} =
                SmartRateLimiter.reserve_token("https://example.com/api")

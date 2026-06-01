@@ -2,7 +2,7 @@
 
 ## Overview
 
-WandererKills is a real-time EVE Online killmail data service that provides multiple integration patterns for consuming killmail data. The service fetches data from zKillboard's RedisQ stream and enriches it with ESI (EVE Swagger Interface) data.
+WandererKills is a real-time EVE Online killmail data service that provides multiple integration patterns for consuming killmail data. The service fetches data from zKillboard's R2Z2 API and enriches it with ESI (EVE Swagger Interface) data.
 
 **Service Information:**
 - **Default Port**: 4004
