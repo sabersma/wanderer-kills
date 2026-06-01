@@ -120,7 +120,8 @@ defmodule WandererKills.Http.Client do
   # ============================================================================
 
   defp do_get(url, headers, options) do
-    do_get_with_redirects(url, headers, options, 0)
+    {request_url, request_options} = prepare_get_request(url, options)
+    do_get_with_redirects(request_url, headers, request_options, 0)
   end
 
   defp do_get_with_redirects(_url, _headers, _options, redirect_count) when redirect_count > 5 do
@@ -151,6 +152,55 @@ defmodule WandererKills.Http.Client do
 
     result
   end
+
+  defp prepare_get_request(url, options) do
+    case Keyword.pop(options, :params) do
+      {nil, request_options} ->
+        {url, request_options}
+
+      {params, request_options} ->
+        {append_query_params(url, params), request_options}
+    end
+  end
+
+  defp append_query_params(url, params) do
+    query_pairs = normalize_query_params(params)
+
+    if query_pairs == [] do
+      url
+    else
+      encoded_query = URI.encode_query(query_pairs)
+      uri = URI.parse(url)
+
+      merged_query =
+        case uri.query do
+          nil -> encoded_query
+          "" -> encoded_query
+          existing -> existing <> "&" <> encoded_query
+        end
+
+      uri
+      |> Map.put(:query, merged_query)
+      |> URI.to_string()
+    end
+  end
+
+  defp normalize_query_params(params) when is_map(params) do
+    params
+    |> Map.to_list()
+    |> normalize_query_params()
+  end
+
+  defp normalize_query_params(params) when is_list(params) do
+    params
+    |> Enum.filter(fn
+      {_key, value} -> not is_nil(value)
+      _ -> false
+    end)
+    |> Enum.map(fn {key, value} -> {to_string(key), value} end)
+  end
+
+  defp normalize_query_params(_params), do: []
 
   defp do_post(url, body, headers, options) do
     Logger.debug("[HTTP] POST #{url}")

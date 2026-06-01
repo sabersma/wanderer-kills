@@ -41,6 +41,7 @@ defmodule WandererKills.Ingest.RedisQ do
   @max_backoff_ms Application.compile_env(:wanderer_kills, [:redisq, :max_backoff_ms], 30_000)
   @backoff_factor Application.compile_env(:wanderer_kills, [:redisq, :backoff_factor], 2)
   @task_timeout_ms Application.compile_env(:wanderer_kills, [:redisq, :task_timeout_ms], 10_000)
+  @request_timeout_ms Application.compile_env(:wanderer_kills, [:redisq, :request_timeout_ms], 45_000)
 
   # Circuit breaker configuration
   @max_consecutive_errors Application.compile_env(
@@ -157,7 +158,7 @@ defmodule WandererKills.Ingest.RedisQ do
   def start_listening do
     url = "#{base_url()}?queueID=wanderer-kills"
 
-    case HttpClient.get_redisq(url) do
+    case HttpClient.get(url, [], timeout: @request_timeout_ms) do
       {:ok, %{body: body}} ->
         handle_response(body)
 
@@ -479,7 +480,7 @@ defmodule WandererKills.Ingest.RedisQ do
     start_time = System.monotonic_time(:millisecond)
 
     Logger.debug("[RedisQ] Making HTTP request...")
-    result = HttpClient.get_redisq(url, headers)
+    result = HttpClient.get(url, headers, timeout: @request_timeout_ms)
     elapsed_ms = System.monotonic_time(:millisecond) - start_time
 
     Logger.debug("[RedisQ] HTTP request completed in #{elapsed_ms}ms")

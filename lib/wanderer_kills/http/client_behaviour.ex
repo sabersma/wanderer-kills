@@ -7,10 +7,21 @@ defmodule WandererKills.Http.ClientBehaviour do
 
   @type url :: String.t()
   @type headers :: [{String.t(), String.t()}]
+  @type request_option ::
+          {:timeout, non_neg_integer()}
+          | {:params, map() | keyword()}
+          | {atom(), term()}
   @type options :: keyword()
   @type response :: {:ok, map()} | {:error, term()}
 
-  @callback get(url, headers, options) :: response
+  @doc """
+  Performs a GET request.
+
+  Implementations should support shared options such as:
+  - `:timeout` - request timeout in milliseconds
+  - `:params` - query params appended to the URL
+  """
+  @callback get(url, headers, [request_option()]) :: response
   @callback get_with_rate_limit(url, headers, options) :: response
   @callback post(url, body :: term(), headers, options) :: response
   @callback get_esi(url, headers, options) :: response
